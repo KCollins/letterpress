@@ -82,13 +82,15 @@
         }
     </style>
 
-    <script async src="https://unpkg.com"></script>
+    <!-- FIXED: Added valid es-module-shims for better browser support -->
+    <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
 
+    <!-- FIXED: Added complete unpkg URLs for a specific Three.js version -->
     <script type="importmap">
       {
         "imports": {
-          "three": "https://unpkg.com",
-          "three/addons/": "https://unpkg.com"
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
         }
       }
     </script>
@@ -125,12 +127,23 @@
     const fileInput = document.getElementById('svg-file-input');
     const statusText = document.getElementById('status');
 
+    // --- NEW: Global Error Listeners for On-Page Debugging ---
+    window.addEventListener('error', function(event) {
+        statusText.style.color = "#dc2626";
+        statusText.innerText = "Script Error: " + event.message;
+    });
+
+    window.addEventListener('unhandledrejection', function(event) {
+        statusText.style.color = "#dc2626";
+        statusText.innerText = "Promise Error: " + event.reason;
+    });
+    // ---------------------------------------------------------
+
     const INCH_TO_MM = 25.4;
     const BASE_HEIGHT_MM = 0.875 * INCH_TO_MM;  
     const TOTAL_HEIGHT_MM = 0.918 * INCH_TO_MM; 
 
     fileInput.addEventListener('change', (e) => {
-        // FIXED: Explicitly grab index [0] to extract the target File object
         const file = e.target.files[0]; 
         if (!file) return;
 
@@ -142,8 +155,18 @@
             reader.onload = function(event) {
                 try {
                     statusText.innerText = "Extruding paths to 3D meshes...";
-                    convertSvgToLetterpressObj(event.target.result, file.name.replace(/\.svg$/i, '_plate.obj'));
-                    statusText.innerText = "Success! Downloading OBJ...";
+                    // Use setTimeout to allow the browser UI to update the status text before heavy processing blocks the thread
+                    setTimeout(() => {
+                        try {
+                            convertSvgToLetterpressObj(event.target.result, file.name.replace(/\.svg$/i, '_plate.obj'));
+                            statusText.style.color = "#16a34a";
+                            statusText.innerText = "Success! Downloading OBJ...";
+                        } catch (err) {
+                            statusText.style.color = "#dc2626";
+                            statusText.innerText = "Conversion Error: " + err.message;
+                            console.error(err);
+                        }
+                    }, 50);
                 } catch (err) {
                     statusText.style.color = "#dc2626";
                     statusText.innerText = "Conversion Error: " + err.message;
@@ -192,7 +215,7 @@
         });
 
         if (allMeshes.length === 0) {
-            throw new Error("No solid shapes or paths detected inside this SVG vector file.");
+            throw new Error("No solid shapes or paths detected inside this SVG vector file. Ensure shapes have a fill.");
         }
 
         const boundingBox = new THREE.Box3().setFromObject(plateGroup);
