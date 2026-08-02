@@ -78,10 +78,10 @@
             font-size: 14px;
             color: #4b5563;
             font-weight: 500;
+            word-wrap: break-word;
         }
     </style>
 
-    <!-- Import maps polyfill to support older browsers if needed -->
     <script async src="https://unpkg.com"></script>
 
     <script type="importmap">
@@ -118,7 +118,6 @@
 </div>
 
 <script type="module">
-    // Safely import unified components from the Module configuration map
     import * as THREE from 'three';
     import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
     import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
@@ -131,25 +130,37 @@
     const TOTAL_HEIGHT_MM = 0.918 * INCH_TO_MM; 
 
     fileInput.addEventListener('change', (e) => {
-        const file = e.target.files[0]; // Fix array index assignment
+        // FIX: Extract the actual single File item object from the list index array
+        const file = e.target.files[0]; 
         if (!file) return;
 
+        statusText.style.color = "#4b5563";
         if (file.name.toLowerCase().endsWith('.svg')) {
-            statusText.innerText = "Processing vector paths...";
+            statusText.innerText = "Reading vector file layers...";
             const reader = new FileReader();
-            reader.readAsText(file);
+            
             reader.onload = function(event) {
                 try {
+                    statusText.innerText = "Extruding paths to 3D meshes...";
                     convertSvgToLetterpressObj(event.target.result, file.name.replace(/\.svg$/i, '_plate.obj'));
                     statusText.innerText = "Success! Downloading OBJ...";
                 } catch (err) {
-                    statusText.innerText = "Error parsing file paths. Is the SVG empty?";
+                    statusText.style.color = "#dc2626";
+                    statusText.innerText = "Conversion Error: " + err.message;
                     console.error(err);
                 }
             };
+
+            reader.onerror = function() {
+                statusText.style.color = "#dc2626";
+                statusText.innerText = "Error reading the physical file.";
+            };
+
+            reader.readAsText(file);
         } else {
-            alert('Please select a file ending in .svg');
-            statusText.innerText = "Ready for file...";
+            statusText.style.color = "#dc2626";
+            statusText.innerText = "Rejected: File extension must be .svg";
+            fileInput.value = "";
         }
     });
 
@@ -171,8 +182,7 @@
             shapes.forEach((shape) => {
                 const geometry = new THREE.ExtrudeGeometry(shape, artworkExtrudeSettings);
                 
-                // 1. Correct standard SVG top-to-bottom Y axis inversion
-                // 2. Flip X axis natively (-1) so the final physical block is perfectly mirrored for printing
+                // Flip planes so that text is natively reversed for letterpress blocks
                 geometry.scale(-1, -1, 1); 
                 
                 const mesh = new THREE.Mesh(geometry);
@@ -182,11 +192,9 @@
         });
 
         if (allMeshes.length === 0) {
-            statusText.innerText = "No paths found in SVG file.";
-            return;
+            throw new Error("No solid shapes or paths detected inside this SVG vector file.");
         }
 
-        // Calculate final plate footprint bounds based on the shapes
         const boundingBox = new THREE.Box3().setFromObject(plateGroup);
         const sizeX = boundingBox.max.x - boundingBox.min.x;
         const sizeY = boundingBox.max.y - boundingBox.min.y;
@@ -197,19 +205,16 @@
         const baseWidth = sizeX + (margin * 2);
         const baseHeight = sizeY + (margin * 2);
 
-        // Build structural floor substrate base
         const baseGeometry = new THREE.BoxGeometry(baseWidth, baseHeight, BASE_HEIGHT_MM);
         const baseMesh = new THREE.Mesh(baseGeometry);
 
         baseMesh.position.set(centerX, centerY, BASE_HEIGHT_MM / 2);
         plateGroup.add(baseMesh);
 
-        // Keep all meshes flat on the floor level baseline
         allMeshes.forEach(mesh => {
             mesh.position.z = 0; 
         });
 
-        // Convert the structural layout into standard text-based OBJ
         const exporter = new OBJExporter();
         const objResult = exporter.parse(plateGroup);
 
