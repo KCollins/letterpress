@@ -81,10 +81,17 @@
         }
     </style>
 
-    <!-- Essential Three.js Core + Extensions via CDN -->
-    <script src="https://cloudflare.com"></script>
-    <script src="https://jsdelivr.net"></script>
-    <script src="https://jsdelivr.net"></script>
+    <!-- Import maps polyfill to support older browsers if needed -->
+    <script async src="https://unpkg.com"></script>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com",
+          "three/addons/": "https://unpkg.com"
+        }
+      }
+    </script>
 </head>
 <body>
 
@@ -105,34 +112,38 @@
             <li>Artwork Height (Dark): 0.918" (23.317mm)</li>
             <li>Floor/Base Height (Rest): 0.875" (22.225mm)</li>
             <li>Net Relief Depth: 0.043" (1.092mm)</li>
+            <li>Orientation: Automatically mirrored for printing</li>
         </ul>
     </div>
 </div>
 
-<script>
+<script type="module">
+    // Safely import unified components from the Module configuration map
+    import * as THREE from 'three';
+    import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
+    import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
+
     const fileInput = document.getElementById('svg-file-input');
     const statusText = document.getElementById('status');
 
-    // Scale constants to map inches natively to millimeter OBJ files
     const INCH_TO_MM = 25.4;
-    const BASE_HEIGHT_MM = 0.875 * INCH_TO_MM;  // 22.2250 mm
-    const TOTAL_HEIGHT_MM = 0.918 * INCH_TO_MM; // 23.3172 mm
-    const RELIEF_DEPTH_MM = TOTAL_HEIGHT_MM - BASE_HEIGHT_MM; // 1.0922 mm
+    const BASE_HEIGHT_MM = 0.875 * INCH_TO_MM;  
+    const TOTAL_HEIGHT_MM = 0.918 * INCH_TO_MM; 
 
     fileInput.addEventListener('change', (e) => {
-        const file = e.target.files[0];
+        const file = e.target.files[0]; // Fix array index assignment
         if (!file) return;
 
-        if (file.name.endsWith('.svg')) {
+        if (file.name.toLowerCase().endsWith('.svg')) {
             statusText.innerText = "Processing vector paths...";
             const reader = new FileReader();
             reader.readAsText(file);
             reader.onload = function(event) {
                 try {
-                    convertSvgToLetterpressObj(event.target.result, file.name.replace('.svg', '_plate.obj'));
+                    convertSvgToLetterpressObj(event.target.result, file.name.replace(/\.svg$/i, '_plate.obj'));
                     statusText.innerText = "Success! Downloading OBJ...";
                 } catch (err) {
-                    statusText.innerText = "Error processing SVG architecture.";
+                    statusText.innerText = "Error parsing file paths. Is the SVG empty?";
                     console.error(err);
                 }
             };
@@ -143,26 +154,26 @@
     });
 
     function convertSvgToLetterpressObj(svgText, outputFileName) {
-        const loader = new THREE.SVGLoader();
+        const loader = new SVGLoader();
         const svgData = loader.parse(svgText);
         const paths = svgData.paths;
         
         const plateGroup = new THREE.Group();
 
-        // Settings to extrude the dark artwork paths
         const artworkExtrudeSettings = {
             depth: TOTAL_HEIGHT_MM,
             bevelEnabled: false
         };
 
-        // Extract shapes and track boundaries to make a form-fitting base plate
         const allMeshes = [];
         paths.forEach((path) => {
-            const shapes = THREE.SVGLoader.createShapes(path);
+            const shapes = SVGLoader.createShapes(path);
             shapes.forEach((shape) => {
                 const geometry = new THREE.ExtrudeGeometry(shape, artworkExtrudeSettings);
-                // Correct Three.js Y-axis inversion relative to SVG standard
-                geometry.scale(1, -1, 1); 
+                
+                // 1. Correct standard SVG top-to-bottom Y axis inversion
+                // 2. Flip X axis natively (-1) so the final physical block is perfectly mirrored for printing
+                geometry.scale(-1, -1, 1); 
                 
                 const mesh = new THREE.Mesh(geometry);
                 plateGroup.add(mesh);
@@ -175,37 +186,33 @@
             return;
         }
 
-        // Calculate the bounding area of all combined shapes to build the perfect backing plate
+        // Calculate final plate footprint bounds based on the shapes
         const boundingBox = new THREE.Box3().setFromObject(plateGroup);
         const sizeX = boundingBox.max.x - boundingBox.min.x;
         const sizeY = boundingBox.max.y - boundingBox.min.y;
         const centerX = (boundingBox.max.x + boundingBox.min.x) / 2;
         const centerY = (boundingBox.max.y + boundingBox.min.y) / 2;
 
-        // Add a 5mm boundary margin around the artwork so it has room on the plate edge
         const margin = 5; 
         const baseWidth = sizeX + (margin * 2);
         const baseHeight = sizeY + (margin * 2);
 
-        // Create the structural 0.875" plate floor
+        // Build structural floor substrate base
         const baseGeometry = new THREE.BoxGeometry(baseWidth, baseHeight, BASE_HEIGHT_MM);
         const baseMesh = new THREE.Mesh(baseGeometry);
 
-        // Position base perfectly underneath the layout bounding box
         baseMesh.position.set(centerX, centerY, BASE_HEIGHT_MM / 2);
         plateGroup.add(baseMesh);
 
-        // Shift the artwork meshes forward slightly so they sit on top of the base mesh 
-        // and reach up to exactly 0.918" (Total Height)
+        // Keep all meshes flat on the floor level baseline
         allMeshes.forEach(mesh => {
-            mesh.position.z = 0; // Sits flat at zero and extrudes all the way up to 0.918"
+            mesh.position.z = 0; 
         });
 
-        // Convert the structural architecture into standard text-based OBJ
-        const exporter = new THREE.OBJExporter();
+        // Convert the structural layout into standard text-based OBJ
+        const exporter = new OBJExporter();
         const objResult = exporter.parse(plateGroup);
 
-        // Trigger safe file dispatch
         downloadFile(objResult, outputFileName);
     }
 
@@ -217,7 +224,6 @@
         document.body.appendChild(element);
         element.click();
         document.body.removeChild(element);
-        // Clear input value so the same file can be uploaded consecutively
         fileInput.value = "";
     }
 </script>
