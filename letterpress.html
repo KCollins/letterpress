@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SVG to OBJ Converter</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #f4f4f9;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-center: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .container {
+            text-align: center;
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+            max-width: 500px;
+            width: 100%;
+        }
+        #drop-zone {
+            border: 3px dashed #4a90e2;
+            border-radius: 8px;
+            padding: 50px 20px;
+            background-color: #f9fbfd;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: bold;
+            color: #4a90e2;
+        }
+        #drop-zone.hover {
+            background-color: #ebf3fc;
+            border-color: #357abd;
+        }
+        .settings {
+            margin-top: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        input[type="number"] {
+            width: 70px;
+            padding: 5px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+    </style>
+
+    <!-- Include Three.js, SVG Loader, and OBJ Exporter from a CDN -->
+    <script src="https://cloudflare.com"></script>
+    <script src="https://jsdelivr.net"></script>
+    <script src="https://jsdelivr.net"></script>
+</head>
+<body>
+
+<div class="container">
+    <h2>SVG to 3D OBJ Converter</h2>
+    <p>Convert 2D vector shapes into 3D objects instantly in your browser.</p>
+    
+    <div id="drop-zone">Drag & Drop your .svg file here</div>
+    
+    <div class="settings">
