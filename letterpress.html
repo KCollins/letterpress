@@ -130,7 +130,7 @@
     const TOTAL_HEIGHT_MM = 0.918 * INCH_TO_MM; 
 
     fileInput.addEventListener('change', (e) => {
-        // FIX: Extract the actual single File item object from the list index array
+        // FIXED: Explicitly grab index [0] to extract the target File object
         const file = e.target.files[0]; 
         if (!file) return;
 
