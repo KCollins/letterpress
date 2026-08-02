@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Letterpress OBJ Plate Generator</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #f3f4f6;
+            color: #1f2937;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .container {
+            text-align: center;
+            background: white;
+            padding: 35px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+            max-width: 480px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .upload-btn-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+            margin: 25px 0;
+            width: 100%;
+        }
+        .btn {
+            border: 2px solid #2563eb;
+            color: white;
+            background-color: #2563eb;
+            padding: 14px 20px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            display: block;
+            width: 100%;
+            box-sizing: border-box;
+            transition: background-color 0.2s;
+        }
+        .btn:hover {
+            background-color: #1d4ed8;
+            border-color: #1d4ed8;
+        }
+        .upload-btn-wrapper input[type=file] {
+            font-size: 100px;
+            position: absolute;
+            left: 0;
+            top: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+        .spec-badge {
+            background-color: #eff6ff;
+            border: 1px solid #bfdbfe;
+            color: #1e40af;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            text-align: left;
+            margin-top: 15px;
+        }
+        .spec-badge ul {
+            margin: 5px 0 0 0;
+            padding-left: 20px;
+        }
+        #status {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #4b5563;
+            font-weight: 500;
+            word-wrap: break-word;
+        }
+    </style>
+
+    <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
+</head>
+<body>
+
+<div class="container">
+    <h2>Letterpress Plate Generator</h2>
+    <p>Select a 2D SVG file to generate a standardized Type-High 3D model.</p>
+    
+    <div class="upload-btn-wrapper">
+        <button class="btn">Select SVG File</button>
+        <input type="file" id="svg-file-input" accept=".svg" />
+    </div>
+
+    <div id="status">Ready for file...</div>
+
+    <div class="spec-badge">
+        <strong>⚙️ Built-in Letterpress Specs (1:1 Metric Output):</strong>
+        <ul>
+            <li>Artwork Height (Dark): 0.918" (23.317mm)</li>
+            <li>Floor/Base Height (Rest): 0.8"</li>
+            <li>Net Relief Depth: 0.043" (1.092mm)</li>
+            <li>Orientation: Automatically mirrored for printing</li>
+        </ul>
+    </div>
+</div>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
+    import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
+    import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
+
+    const fileInput = document.getElementById('svg-file-input');
+    const statusText = document.getElementById('status');
+
+    window.addEventListener('error', function(event) {
+        statusText.style.color = "#dc2626";
+        statusText.innerText = "Script Error: " + event.message;
+    });
+
+    window.addEventListener('unhandledrejection', function(event) {
+        statusText.style.color = "#dc2626";
+        statusText.innerText = "Promise Error: " + event.reason;
+    });
+
+    const INCH_TO_MM = 25.4;
+    const BASE_HEIGHT_MM = 0.8 * INCH_TO_MM;  
+    const TOTAL_HEIGHT_MM = 0.918 * INCH_TO_MM; 
+
+    // NEW: Function to sanitize geometries so they merge flawlessly
+    function prepareGeometry(geometry) {
+        // 1. Convert to non-indexed to prevent index mismatch errors
+        let geom = geometry.toNonIndexed(); 
+        
+        // 2. Strip out UVs, colors, etc. We only need pure structure for 3D printing.
+        const attributes = Object.keys(geom.attributes);
+        for (const key of attributes) {
+            if (key !== 'position' && key !== 'normal') {
+                geom.deleteAttribute(key);
+            }
+        }
+        
+        // 3. Explicitly set morphAttributes to prevent the "null" crash
+        geom.morphAttributes = geom.morphAttributes || {};
+        
+        return geom;
+    }
+
+    fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0]; 
+        if (!file) return;
+
+        statusText.style.color = "#4b5563";
+        if (file.name.toLowerCase().endsWith('.svg')) {
+            statusText.innerText = "Reading vector file layers...";
+            const reader = new FileReader();
+            
+            reader.onload = function(event) {
+                try {
+                    statusText.innerText = "Extruding paths to 3D meshes...";
+                    setTimeout(() => {
+                        try {
+                            convertSvgToLetterpressObj(event.target.result, file.name.replace(/\.svg$/i, '_plate.obj'));
+                            statusText.style.color = "#16a34a";
+                            statusText.innerText = "Success! Downloading OBJ...";
+                        } catch (err) {
+                            statusText.style.color = "#dc2626";
+                            statusText.innerText = "Conversion Error: " + err.message;
+                            console.error(err);
+                        }
+                    }, 50);
+                } catch (err) {
+                    statusText.style.color = "#dc2626";
+                    statusText.innerText = "Conversion Error: " + err.message;
+                    console.error(err);
+                }
+            };
+
+            reader.onerror = function() {
+                statusText.style.color = "#dc2626";
+                statusText.innerText = "Error reading the physical file.";
+            };
+
+            reader.readAsText(file);
+        } else {
+            statusText.style.color = "#dc2626";
+            statusText.innerText = "Rejected: File extension must be .svg";
+            fileInput.value = "";
+        }
+    });
+
+    function convertSvgToLetterpressObj(svgText, outputFileName) {
+        const loader = new SVGLoader();
+        const svgData = loader.parse(svgText);
+        const paths = svgData.paths;
+        
+        const artworkExtrudeSettings = {
+            depth: TOTAL_HEIGHT_MM,
+            bevelEnabled: false
+        };
+
+        const allGeometries = [];
+        paths.forEach((path) => {
+            const shapes = SVGLoader.createShapes(path);
+            shapes.forEach((shape) => {
+                const rawGeometry = new THREE.ExtrudeGeometry(shape, artworkExtrudeSettings);
+                rawGeometry.scale(-1, -1, 1); 
+                
+                // Scrub the geometry before adding it to the list
+                const cleanGeometry = prepareGeometry(rawGeometry);
+                allGeometries.push(cleanGeometry);
+            });
+        });
+
+        if (allGeometries.length === 0) {
+            throw new Error("No solid shapes or paths detected inside this SVG vector file.");
+        }
+
+        // 1. Combine all the disparate vector paths into one single 3D geometry
+        let mergedArtwork = BufferGeometryUtils.mergeGeometries(allGeometries);
+        if (!mergedArtwork) throw new Error("Failed to merge SVG artwork paths.");
+
+        // 2. Find the exact mathematical center of the newly combined artwork
+        mergedArtwork.computeBoundingBox();
+        const box = mergedArtwork.boundingBox;
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        const center = new THREE.Vector3();
+        box.getCenter(center);
+
+        // 3. Shift the artwork so its XY center point sits perfectly at 0,0
+        mergedArtwork.translate(-center.x, -center.y, 0);
+
+        // 4. Generate the baseplate
+        const margin = 5; 
+        const baseWidth = size.x + (margin * 2);
+        const baseHeight = size.y + (margin * 2);
+        const rawBaseGeometry = new THREE.BoxGeometry(baseWidth, baseHeight, BASE_HEIGHT_MM);
+
+        // 5. Shift the baseplate up so its bottom sits exactly on Z=0
+        rawBaseGeometry.translate(0, 0, BASE_HEIGHT_MM / 2);
+
+        // Scrub the baseplate so it matches the artwork data structure exactly
+        const cleanBaseGeometry = prepareGeometry(rawBaseGeometry);
+
+        // 6. Fuse the centered baseplate and the centered artwork into a solid manifold block
+        const finalGeometry = BufferGeometryUtils.mergeGeometries([cleanBaseGeometry, mergedArtwork]);
+        if (!finalGeometry) throw new Error("Failed to fuse artwork to the backing plate.");
+        
+        // 7. Render and export
+        const finalMesh = new THREE.Mesh(finalGeometry);
+        const exportScene = new THREE.Scene();
+        exportScene.add(finalMesh);
+
+        const exporter = new OBJExporter();
+        const objResult = exporter.parse(exportScene);
+
+        downloadFile(objResult, outputFileName);
+    }
+
+    function downloadFile(content, fileName) {
+        const element = document.createElement('a');
+        const file = new Blob([content], {type: 'text/plain'});
+        element.href = URL.createObjectURL(file);
+        element.download = fileName;
+        document.body.appendChild(element);
+        element.click();
+        document.body.removeChild(element);
+        fileInput.value = "";
+    }
+</script>
+
+</body>
+</html>
